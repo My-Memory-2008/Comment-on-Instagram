@@ -103,7 +103,7 @@ ACCESS_TOKEN = os.environ.get("INSTAGRAM_ACCESS_TOKEN")
 INSTAGRAM_ACCOUNT_ID = os.environ.get("INSTAGRAM_ACCOUNT_ID")
 
 # Use a stable Graph API version (v19.0 or v20.0)
-API_VERSION = "v19.0"
+API_VERSION = "v18.0"
 
 if not ACCESS_TOKEN or not INSTAGRAM_ACCOUNT_ID:
     print("❌ ERROR: Missing required GitHub Secrets!")
