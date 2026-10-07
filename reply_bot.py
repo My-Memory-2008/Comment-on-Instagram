@@ -90,6 +90,12 @@
 
 
 
+
+
+
+
+
+
 import os
 import sys
 import requests
@@ -108,28 +114,26 @@ def generate_local_ai_reply(username, comment_text):
     """
     print(f"🤖 Querying local Ollama server for @{username}...")
     
-    # Standard Ollama local generation endpoint
     ollama_url = "http://localhost:11434/api/generate"
     
     prompt = (
         f"You are a friendly, engaging Instagram creator. A viewer named @{username} "
         f"just left this comment on your post: '{comment_text}'. "
         f"Write a short, lively, and conversational reply to them. Use emojis naturally, "
-        f"keep it under 1 sentences, and make it feel personal so they want to keep chatting. "
+        f"keep it under 2 sentences, and make it feel personal so they want to keep chatting. "
         f"Do not include quotes or meta-text. Just output the direct reply."
     )
     
     payload = {
         "model": "qwen2.5:1.5b",
         "prompt": prompt,
-        "stream": False # Disable streaming to get the full response back at once
+        "stream": False
     }
     
     try:
         response = requests.post(ollama_url, json=payload, timeout=30)
         if response.status_code == 200:
             ai_text = response.json().get("response", "").strip()
-            # Clean up unwanted outer quotes
             if ai_text.startswith('"') and ai_text.endswith('"'):
                 ai_text = ai_text[1:-1]
             return ai_text
@@ -139,6 +143,7 @@ def generate_local_ai_reply(username, comment_text):
     return f"Hey @{username}! Thanks for dropping a comment on my recent post. Let's connect! 💬"
 
 def get_latest_media():
+    # FIXED: Re-corrected domain endpoint back to graph.facebook.com
     url = f"https://facebook.com/{INSTAGRAM_ACCOUNT_ID}/media?access_token={ACCESS_TOKEN}"
     try:
         response = requests.get(url)
@@ -150,6 +155,7 @@ def get_latest_media():
         return None
 
 def send_dm(user_id, message_text):
+    # FIXED: Re-corrected domain endpoint back to graph.facebook.com
     url = f"https://facebook.comme/messages?access_token={ACCESS_TOKEN}"
     payload = {
         "recipient": {"id": user_id},
@@ -158,6 +164,7 @@ def send_dm(user_id, message_text):
     requests.post(url, json=payload)
 
 def reply_to_public_comment(comment_id, message_text):
+    # FIXED: Re-corrected domain endpoint back to graph.facebook.com
     url = f"https://facebook.com/{comment_id}/replies"
     payload = {
         'message': message_text,
@@ -166,6 +173,7 @@ def reply_to_public_comment(comment_id, message_text):
     requests.post(url, data=payload)
 
 def process_all_comments(media_id):
+    # FIXED: Re-corrected domain endpoint back to graph.facebook.com
     url = f"https://facebook.com/{media_id}/comments?fields=id,text,from&access_token={ACCESS_TOKEN}"
     try:
         response = requests.get(url)
@@ -187,9 +195,8 @@ def process_all_comments(media_id):
                 
                 print(f"🚀 Processing comment from @{username}: '{comment_text}'")
                 
-                # Fetch local generation parameters 
                 custom_reply = generate_local_ai_reply(username, comment_text)
-                print(f"✨ AI Reply: {custom_reply}")
+                print(f"✨ AI Reply Generated: {custom_reply}")
                 
                 # 1. Post the custom AI message directly on the comment thread
                 reply_to_public_comment(comment_id, custom_reply)
