@@ -230,50 +230,30 @@
 
 
 
+
 import os
 import sys
-import json
 import requests
 
 ACCESS_TOKEN = os.environ.get("INSTAGRAM_ACCESS_TOKEN")
 INSTAGRAM_ACCOUNT_ID = os.environ.get("INSTAGRAM_ACCOUNT_ID")
-HISTORY_FILE = "replied_comments.json"
 
 if not ACCESS_TOKEN or not INSTAGRAM_ACCOUNT_ID:
     print("❌ ERROR: Missing required GitHub Secrets!")
     sys.exit(1)
 
-def load_reply_history():
-    """Loads the list of already processed comment IDs from a local file."""
-    if os.path.exists(HISTORY_FILE):
-        try:
-            with open(HISTORY_FILE, "r") as f:
-                return set(json.load(f))
-        except Exception:
-            return set()
-    return set()
-
-def save_reply_history(history_set):
-    """Saves the updated list of processed comment IDs to disk."""
-    try:
-        with open(HISTORY_FILE, "w") as f:
-            json.dump(list(history_set), f)
-    except Exception as e:
-        print(f"⚠️ Failed to save history cache: {e}")
-
 def generate_local_ai_reply(username, comment_text):
     """
-    Queries Ollama to generate an ultra-short reaction (max 20 chars),
-    heavily prioritizing emojis to express gratitude, respect, and vibe.
+    Queries Ollama to generate an ultra-short expression/emoji combo under 20 chars.
     """
     print(f"🤖 Generating emoji reaction for @{username}...")
     ollama_url = "http://localhost:11434/api/generate"
     
     prompt = (
         f"A viewer named @{username} commented: '{comment_text}'. "
-        f"Generate a response that is MAXIMUM 3-4 words or purely emojis. "
-        f"Express gratitude, respect, or high energy. Total length MUST be under 20 characters. "
-        f"Focus mostly on emojis (like 🙌, 🔥, ❤️, 🫡). No long text, no quotes."
+        f"Generate a response that is MAXIMUM 1-3 words or purely emojis. "
+        f"Express high energy, respect, or gratitude. Total length MUST be under 20 characters. "
+        f"Focus heavily on emojis like 🙌, 🔥, ❤️, 🫡, 🌟. Do not include quotes or meta text."
     )
     
     payload = {
@@ -281,8 +261,8 @@ def generate_local_ai_reply(username, comment_text):
         "prompt": prompt,
         "stream": False,
         "options": {
-            "num_predict": 12, # Heavily restricts length at the model level
-            "temperature": 0.7
+            "num_predict": 10,
+            "temperature": 0.6
         }
     }
     
@@ -293,7 +273,7 @@ def generate_local_ai_reply(username, comment_text):
             if ai_text.startswith('"') and ai_text.endswith('"'):
                 ai_text = ai_text[1:-1]
             
-            # Strict safety truncate to fulfill the 20-character rule
+            # Absolute hard-limit fallback truncation to protect the 20-character rule
             if len(ai_text) > 20:
                 ai_text = ai_text[:17] + "..."
             return ai_text
@@ -303,7 +283,8 @@ def generate_local_ai_reply(username, comment_text):
     return "🙌🔥🫡"
 
 def get_latest_media():
-    url = f"https://facebook.com/{INSTAGRAM_ACCOUNT_ID}/media?access_token={ACCESS_TOKEN}"
+    # FIXED: Re-enforced graph.facebook.com endpoint channel
+    url = f"https://facebook.com{INSTAGRAM_ACCOUNT_ID}/media?access_token={ACCESS_TOKEN}"
     try:
         response = requests.get(url)
         response.raise_for_status()
@@ -322,23 +303,38 @@ def send_dm(user_id, message_text):
     requests.post(url, json=payload)
 
 def reply_to_public_comment(comment_id, message_text):
-    url = f"https://facebook.com/{comment_id}/replies"
+    url = f"https://facebook.com{comment_id}/replies"
     payload = {
         'message': message_text,
         'access_token': ACCESS_TOKEN
     }
     requests.post(url, data=payload)
 
+def has_already_replied(comment_id):
+    """
+    Pings Meta directly to check if your account ID has already 
+    left a reply inside this comment's specific nested conversation tree.
+    """
+    url = f"https://facebook.com{comment_id}/replies?fields=from&access_token={ACCESS_TOKEN}"
+    try:
+        res = requests.get(url)
+        if res.status_code == 200:
+            replies = res.json().get('data', [])
+            for reply in replies:
+                author = reply.get('from', {})
+                if author.get('id') == INSTAGRAM_ACCOUNT_ID:
+                    return True
+    except Exception:
+        pass
+    return False
+
 def process_all_comments(media_id):
-    url = f"https://facebook.com/{media_id}/comments?fields=id,text,from&access_token={ACCESS_TOKEN}"
+    url = f"https://facebook.com{media_id}/comments?fields=id,text,from&access_token={ACCESS_TOKEN}"
     try:
         response = requests.get(url)
         response.raise_for_status()
         comments = response.json().get('data', [])
-        print(f"💬 Found {len(comments)} total comments on post.")
-        
-        replied_history = load_reply_history()
-        updated_history = False
+        print(f"💬 Found {len(comments)} total comments to evaluate.")
         
         for comment in comments:
             comment_id = comment.get('id')
@@ -349,34 +345,26 @@ def process_all_comments(media_id):
                 instagram_user_id = commenter.get('id')
                 username = commenter.get('username', 'there')
                 
-                # Rule 1: Prevent the bot from talking to itself
+                # Rule 1: Skip if comment author is the bot itself
                 if instagram_user_id == INSTAGRAM_ACCOUNT_ID:
                     continue
                 
-                # Rule 2: Deduplication Check (Bypass if already handled)
-                if comment_id in replied_history:
-                    print(f"⏭️ Skipping comment from @{username} (Already replied to this specific comment).")
+                # Rule 2: Live Server-Side Deduplication Check
+                if has_already_replied(comment_id):
+                    print(f"⏭️ Skipping comment from @{username} (Live check: Already replied).")
                     continue
                 
                 print(f"🚀 Processing new comment from @{username}...")
                 
-                # Generate ultra-short emoji centric text
                 custom_ai_reply = generate_local_ai_reply(username, comment_text)
                 print(f"✨ AI Reply Generated ({len(custom_ai_reply)} chars): {custom_ai_reply}")
                 
-                # 1. Post public comment reply
+                # 1. Post the short emoji centric comment string
                 reply_to_public_comment(comment_id, custom_ai_reply)
                 
-                # 2. Fire private engagement DM
+                # 2. Fire the standard baseline private DM engagement trigger
                 dm_text = f"Hey {username}! Thanks for dropping a comment on my recent post. Let's connect!"
                 send_dm(instagram_user_id, dm_text)
-                
-                # Log to tracking register
-                replied_history.add(comment_id)
-                updated_history = True
-                
-        if updated_history:
-            save_reply_history(replied_history)
                 
     except Exception as e:
         print(f"❌ Error processing comments: {e}")
