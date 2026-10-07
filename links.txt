@@ -1,0 +1,13 @@
+Since meta developers console is so not good , these are the thinks from where we can access it easily
+
+1.https://developers.facebook.com/apps/1871210410730817/dashboard/?business_id=1278547284160754
+
+the above link is for going into the apps section ,since the app sections is not quite largely available in this facebook developers website. here we can get the app id and the app secret for the apps .
+
+2.https://developers.facebook.com/tools/explorer/1081909534655231/
+
+using this website we can see and get the access token for the apps we have created .
+
+3.https://graph.facebook.com/v18.0/me/accounts?fields=instagram_business_account&access_token=PASTE_YOUR_ACCESS_TOKEN_HERE
+
+using this website we can get the business id info and replace the "PASTE_YOUR_ACCESS_TOKEN_HERE" with the access token you will generate in the second link i have given you
