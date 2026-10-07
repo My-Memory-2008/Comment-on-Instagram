@@ -127,7 +127,7 @@ def generate_local_ai_reply(username, comment_text):
         f"Generate a response that is MAXIMUM 1-2 words or purely expressions/emojis. "
         f"Express intense high energy, respect, vibe, or gratitude. "
         f"Total string length MUST be under 20 characters total. "
-        f"Prioritize raw emojis heavily like: 🙌, 🔥, ❤️, 🫡, 🌟, 💯. No quotes."
+        f"Prioritize raw emojis heavily like: 🙌, 🔥, ❤️, 🫡, 🌟, 💯. few quotes."
     )
     
     payload = {
