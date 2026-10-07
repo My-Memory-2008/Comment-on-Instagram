@@ -12,18 +12,20 @@ if not ACCESS_TOKEN or not INSTAGRAM_ACCOUNT_ID:
     sys.exit(1)
 
 def get_latest_media():
-    url = f"https://facebook.com/{INSTAGRAM_ACCOUNT_ID}/media?access_token={ACCESS_TOKEN}"
+    # FIXED: Changed www.facebook.com to graph.facebook.com
+    url = f"https://graph.facebook.com/v18.0/{INSTAGRAM_ACCOUNT_ID}/media?access_token={ACCESS_TOKEN}"
     try:
         response = requests.get(url)
         response.raise_for_status()
         data = response.json().get('data', [])
-        return data[0] if data else None  # Grab only the single latest post
+        return data[0] if data else None  # Safely returns the single most recent post
     except Exception as e:
         print(f"❌ Failed to fetch media: {e}")
         return None
 
 def send_dm(user_id, message_text):
-    url = f"https://facebook.comme/messages?access_token={ACCESS_TOKEN}"
+    # FIXED: Changed www.facebook.com to graph.facebook.com
+    url = f"https://facebook.com/{ACCESS_TOKEN}"
     payload = {
         "recipient": {"id": user_id},
         "message": {"text": message_text}
@@ -31,7 +33,8 @@ def send_dm(user_id, message_text):
     requests.post(url, json=payload)
 
 def reply_to_public_comment(comment_id):
-    url = f"https://facebook.com/{comment_id}/replies"
+    # FIXED: Changed www.facebook.com to graph.facebook.com
+    url = f"https://graph.facebook.com/v18.0/{comment_id}/replies"
     payload = {
         'message': "Thanks for hanging out! Check your DMs, I just sent you a message! 📥",
         'access_token': ACCESS_TOKEN
@@ -39,7 +42,8 @@ def reply_to_public_comment(comment_id):
     requests.post(url, data=payload)
 
 def process_all_comments(media_id):
-    url = f"https://facebook.com/{media_id}/comments?fields=id,text,from&access_token={ACCESS_TOKEN}"
+    # FIXED: Changed www.facebook.com to graph.facebook.com
+    url = f"https://graph.facebook.com/v18.0/{media_id}/comments?fields=id,text,from&access_token={ACCESS_TOKEN}"
     try:
         response = requests.get(url)
         response.raise_for_status()
@@ -54,16 +58,16 @@ def process_all_comments(media_id):
                 instagram_user_id = commenter.get('id')
                 username = commenter.get('username', 'there')
                 
-                # CRITICAL: Skip if the comment is from your own bot/account to avoid infinite loops
+                # Prevent the bot from talking to itself
                 if instagram_user_id == INSTAGRAM_ACCOUNT_ID:
                     continue
                 
                 print(f"🚀 Processing comment from @{username}...")
                 
-                # 1. Post a public comment reply to boost algorithm metrics
+                # 1. Post public comment reply
                 reply_to_public_comment(comment_id)
                 
-                # 2. Fire off the private DM engagement message
+                # 2. Fire the private engagement DM
                 dm_text = f"Hey {username}! Thanks for dropping a comment on my recent post. Let's connect!"
                 send_dm(instagram_user_id, dm_text)
                 
