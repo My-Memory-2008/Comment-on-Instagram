@@ -230,7 +230,6 @@
 
 
 
-
 import os
 import sys
 import requests
@@ -273,7 +272,7 @@ def generate_local_ai_reply(username, comment_text):
             if ai_text.startswith('"') and ai_text.endswith('"'):
                 ai_text = ai_text[1:-1]
             
-            # Absolute hard-limit fallback truncation to protect the 20-character rule
+            # Truncation safety cap to enforce the 20-character rule
             if len(ai_text) > 20:
                 ai_text = ai_text[:17] + "..."
             return ai_text
@@ -283,8 +282,7 @@ def generate_local_ai_reply(username, comment_text):
     return "🙌🔥🫡"
 
 def get_latest_media():
-    # FIXED: Re-enforced graph.facebook.com endpoint channel
-    url = f"https://facebook.com{INSTAGRAM_ACCOUNT_ID}/media?access_token={ACCESS_TOKEN}"
+    url = f"https://facebook.com/{INSTAGRAM_ACCOUNT_ID}/media?access_token={ACCESS_TOKEN}"
     try:
         response = requests.get(url)
         response.raise_for_status()
@@ -295,15 +293,19 @@ def get_latest_media():
         return None
 
 def send_dm(user_id, message_text):
-    url = f"https://facebook.com/{ACCESS_TOKEN}"
+    # FIXED: Corrected the broken /%ACCESS_TOKEN URL that was crashing the network engine
+    url = f"https://facebook.comme/messages?access_token={ACCESS_TOKEN}"
     payload = {
         "recipient": {"id": user_id},
         "message": {"text": message_text}
     }
-    requests.post(url, json=payload)
+    try:
+        requests.post(url, json=payload)
+    except Exception as e:
+        print(f"⚠️ Failed to send private DM: {e}")
 
 def reply_to_public_comment(comment_id, message_text):
-    url = f"https://facebook.com{comment_id}/replies"
+    url = f"https://facebook.com/{comment_id}/replies"
     payload = {
         'message': message_text,
         'access_token': ACCESS_TOKEN
@@ -312,10 +314,10 @@ def reply_to_public_comment(comment_id, message_text):
 
 def has_already_replied(comment_id):
     """
-    Pings Meta directly to check if your account ID has already 
-    left a reply inside this comment's specific nested conversation tree.
+    Checks the live Instagram thread history to see if your account ID 
+    has already engaged with this comment thread.
     """
-    url = f"https://facebook.com{comment_id}/replies?fields=from&access_token={ACCESS_TOKEN}"
+    url = f"https://facebook.com/{comment_id}/replies?fields=from&access_token={ACCESS_TOKEN}"
     try:
         res = requests.get(url)
         if res.status_code == 200:
@@ -329,7 +331,7 @@ def has_already_replied(comment_id):
     return False
 
 def process_all_comments(media_id):
-    url = f"https://facebook.com{media_id}/comments?fields=id,text,from&access_token={ACCESS_TOKEN}"
+    url = f"https://facebook.com/{media_id}/comments?fields=id,text,from&access_token={ACCESS_TOKEN}"
     try:
         response = requests.get(url)
         response.raise_for_status()
@@ -345,7 +347,7 @@ def process_all_comments(media_id):
                 instagram_user_id = commenter.get('id')
                 username = commenter.get('username', 'there')
                 
-                # Rule 1: Skip if comment author is the bot itself
+                # Rule 1: Skip self comments
                 if instagram_user_id == INSTAGRAM_ACCOUNT_ID:
                     continue
                 
@@ -359,10 +361,10 @@ def process_all_comments(media_id):
                 custom_ai_reply = generate_local_ai_reply(username, comment_text)
                 print(f"✨ AI Reply Generated ({len(custom_ai_reply)} chars): {custom_ai_reply}")
                 
-                # 1. Post the short emoji centric comment string
+                # 1. Post the custom AI emoji reply
                 reply_to_public_comment(comment_id, custom_ai_reply)
                 
-                # 2. Fire the standard baseline private DM engagement trigger
+                # 2. Fire the private engagement DM
                 dm_text = f"Hey {username}! Thanks for dropping a comment on my recent post. Let's connect!"
                 send_dm(instagram_user_id, dm_text)
                 
@@ -373,7 +375,8 @@ if __name__ == "__main__":
     print("🚀 Starting Instagram Blanket Engagement Bot...")
     latest_post = get_latest_media()
     if latest_post:
-        print(f"📸 Target Post Found ID: {latest_post['id']}")
-        process_all_comments(latest_post['id'])
+        # Fixed list unpack map syntax matching your successful execution
+        print(f"📸 Target Post Found ID: {latest_post[0]['id']}")
+        process_all_comments(latest_post[0]['id'])
     else:
         print("🤷 No recent posts found or API error occurred.")
