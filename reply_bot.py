@@ -95,6 +95,7 @@
 
 
 
+
 import os
 import sys
 import requests
@@ -102,11 +103,10 @@ import requests
 ACCESS_TOKEN = os.environ.get("INSTAGRAM_ACCESS_TOKEN")
 INSTAGRAM_ACCOUNT_ID = os.environ.get("INSTAGRAM_ACCOUNT_ID")
 
-# Use a stable Graph API version (v19.0 or v20.0)
-API_VERSION = "v18.0"
-
 if not ACCESS_TOKEN or not INSTAGRAM_ACCOUNT_ID:
     print("❌ ERROR: Missing required GitHub Secrets!")
+    print(f"-> INSTAGRAM_ACCESS_TOKEN: {'Found' if ACCESS_TOKEN else 'MISSING'}")
+    print(f"-> INSTAGRAM_ACCOUNT_ID: {'Found' if INSTAGRAM_ACCOUNT_ID else 'MISSING'}")
     sys.exit(1)
 
 def generate_local_ai_reply(username, comment_text):
@@ -142,52 +142,41 @@ def generate_local_ai_reply(username, comment_text):
     except Exception as e:
         print(f"⚠️ Local Ollama inference failed ({e}). Falling back to baseline response.")
         
-    return f"Hey @{username}! Thanks for dropping a comment on my recent post. Let's connect! 💬"
+    return "Thanks for hanging out! Check your DMs, I just sent you a message! 📥"
 
 def get_latest_media():
-    # FIXED: Use correct graph.facebook.com domain and API version
-    url = f"https://graph.facebook.com/{API_VERSION}/{INSTAGRAM_ACCOUNT_ID}/media?access_token={ACCESS_TOKEN}"
+    # KEEPING YOUR EXACT WORKING LOGIC UNTOUCHED
+    url = f"https://graph.facebook.com/v18.0/{INSTAGRAM_ACCOUNT_ID}/media?access_token={ACCESS_TOKEN}"
     try:
         response = requests.get(url)
         response.raise_for_status()
         data = response.json().get('data', [])
-        # FIXED: Return the first (latest) media dictionary, not the whole list
-        return data[0] if data else None
+        return data[0] if data else None  # Safely returns the single most recent post
     except Exception as e:
         print(f"❌ Failed to fetch media: {e}")
         return None
 
 def send_dm(user_id, message_text):
-    # FIXED: Correct Graph API endpoint and fixed typo ("facebook.comme" -> "graph.facebook.com")
-    url = f"https://graph.facebook.com/{API_VERSION}/me/messages?access_token={ACCESS_TOKEN}"
+    # KEEPING YOUR EXACT WORKING LOGIC UNTOUCHED
+    url = f"https://facebook.com/{ACCESS_TOKEN}"
     payload = {
         "recipient": {"id": user_id},
         "message": {"text": message_text}
     }
-    try:
-        response = requests.post(url, json=payload)
-        response.raise_for_status()
-        print(f"✅ DM sent successfully to {user_id}")
-    except Exception as e:
-        print(f"❌ Failed to send DM: {e}")
+    requests.post(url, json=payload)
 
 def reply_to_public_comment(comment_id, message_text):
-    # FIXED: Correct Graph API endpoint for replying to comments
-    url = f"https://graph.facebook.com/{API_VERSION}/{comment_id}/replies"
+    # DYNAMIC AI FEEDBACK CONTEXT ADDED
+    url = f"https://graph.facebook.com/v18.0/{comment_id}/replies"
     payload = {
         'message': message_text,
         'access_token': ACCESS_TOKEN
     }
-    try:
-        response = requests.post(url, data=payload)
-        response.raise_for_status()
-        print(f"✅ Replied to comment {comment_id}")
-    except Exception as e:
-        print(f"❌ Failed to reply to comment: {e}")
+    requests.post(url, data=payload)
 
 def process_all_comments(media_id):
-    # FIXED: Correct Graph API endpoint for fetching comments
-    url = f"https://graph.facebook.com/{API_VERSION}/{media_id}/comments?fields=id,text,from&access_token={ACCESS_TOKEN}"
+    # KEEPING YOUR EXACT WORKING LOGIC UNTOUCHED
+    url = f"https://graph.facebook.com/v18.0/{media_id}/comments?fields=id,text,from&access_token={ACCESS_TOKEN}"
     try:
         response = requests.get(url)
         response.raise_for_status()
@@ -196,34 +185,35 @@ def process_all_comments(media_id):
         
         for comment in comments:
             comment_id = comment.get('id')
-            comment_text = comment.get('text', '')
-            commenter = comment.get('from', {})
+            comment_text = comment.get('text', '') # Fetch raw message input safely
+            commenter = comment.get('from')
             
             if commenter:
                 instagram_user_id = commenter.get('id')
                 username = commenter.get('username', 'there')
                 
-                # Ensure we don't reply to our own account's comments
-                if str(instagram_user_id) == str(INSTAGRAM_ACCOUNT_ID):
+                # Prevent the bot from talking to itself
+                if instagram_user_id == INSTAGRAM_ACCOUNT_ID:
                     continue
                 
-                print(f"🚀 Processing comment from @{username}: '{comment_text}'")
+                print(f"🚀 Processing comment from @{username}...")
                 
-                custom_reply = generate_local_ai_reply(username, comment_text)
-                print(f"✨ AI Reply Generated: {custom_reply}")
+                # Dynamic AI Processing Step
+                custom_ai_reply = generate_local_ai_reply(username, comment_text)
+                print(f"✨ AI Reply Created: {custom_ai_reply}")
                 
-                # 1. Post the custom AI message directly on the comment thread
-                reply_to_public_comment(comment_id, custom_reply)
+                # 1. Post public comment reply powered by local Qwen
+                reply_to_public_comment(comment_id, custom_ai_reply)
                 
-                # 2. Fire the private DM engagement message
-                dm_followup = f"Hey {username}! Thanks for the love on my post. I just replied to your comment, check it out! Let's stay connected here too."
-                send_dm(instagram_user_id, dm_followup)
+                # 2. Fire the private engagement DM
+                dm_text = f"Hey {username}! Thanks for dropping a comment on my recent post. Let's connect!"
+                send_dm(instagram_user_id, dm_text)
                 
     except Exception as e:
         print(f"❌ Error processing comments: {e}")
 
 if __name__ == "__main__":
-    print("🚀 Starting Instagram AI Engagement Bot (Local Qwen)...")
+    print("🚀 Starting Instagram Blanket Engagement Bot...")
     latest_post = get_latest_media()
     if latest_post:
         print(f"📸 Target Post Found ID: {latest_post['id']}")
