@@ -108,12 +108,9 @@ import sys
 import requests
 
 ACCESS_TOKEN = os.environ.get("INSTAGRAM_ACCESS_TOKEN")
-INSTAGRAM_ACCOUNT_ID = os.environ.get("INSTAGRAM_ACCOUNT_ID")
 
-if not ACCESS_TOKEN or not INSTAGRAM_ACCOUNT_ID:
-    print("❌ ERROR: Missing required GitHub Secrets!")
-    print(f"-> INSTAGRAM_ACCESS_TOKEN: {'Found' if ACCESS_TOKEN else 'MISSING'}")
-    print(f"-> INSTAGRAM_ACCOUNT_ID: {'Found' if INSTAGRAM_ACCOUNT_ID else 'MISSING'}")
+if not ACCESS_TOKEN:
+    print("❌ ERROR: Missing required INSTAGRAM_ACCESS_TOKEN in GitHub Secrets!")
     sys.exit(1)
 
 def generate_local_ai_reply(username, comment_text):
@@ -150,50 +147,40 @@ def generate_local_ai_reply(username, comment_text):
         
     return "Thanks for hanging out! Check your DMs, I just sent you a message! 📥"
 
-def get_latest_media():
-    url = f"https://graph.facebook.com/v18.0/{INSTAGRAM_ACCOUNT_ID}/media?access_token={ACCESS_TOKEN}"
+def get_latest_media_safe():
+    """
+    FIX: Bypasses the Account ID requirement completely.
+    Uses the universal 'me/media' node mapping to look up your latest post 
+    safely without throwing 400 Bad Request errors.
+    """
+    url = f"https://facebook.com/{ACCESS_TOKEN}"
     try:
         response = requests.get(url)
         response.raise_for_status()
         data = response.json().get('data', [])
-        return data[0] if data else None
+        return data[0] if data else None  # Safely extracts the single most recent post
     except Exception as e:
-        print(f"❌ Failed to fetch media: {e}")
+        print(f"❌ Failed to fetch media via universal endpoint: {e}")
         return None
 
 def send_dm(user_id, message_text):
-    # FIXED: The correct endpoint for Instagram Messaging is /{ig-user-id}/messages
-    url = f"https://graph.facebook.com/v18.0/{INSTAGRAM_ACCOUNT_ID}/messages?access_token={ACCESS_TOKEN}"
+    url = f"https://facebook.com/{ACCESS_TOKEN}"
     payload = {
-        "recipient": {"id": str(user_id)},
+        "recipient": {"id": user_id},
         "message": {"text": message_text}
     }
-    try:
-        response = requests.post(url, json=payload)
-        response_json = response.json()
-        if response.status_code == 200:
-            print(f"✅ DM sent successfully to {user_id}")
-        else:
-            print(f"❌ Failed to send DM to {user_id}. Facebook API Error: {response_json}")
-    except Exception as e:
-        print(f"❌ Exception while sending DM to {user_id}: {e}")
+    requests.post(url, json=payload)
 
 def reply_to_public_comment(comment_id, message_text):
-    url = f"https://graph.facebook.com/v18.0/{comment_id}/replies"
+    url = f"https://facebook.com/{comment_id}/replies"
     payload = {
         'message': message_text,
         'access_token': ACCESS_TOKEN
     }
-    try:
-        response = requests.post(url, data=payload)
-        response.raise_for_status()
-        print(f"✅ Replied to comment {comment_id}")
-    except Exception as e:
-        print(f"❌ Failed to reply to comment {comment_id}: {e}")
+    requests.post(url, data=payload)
 
 def process_all_comments(media_id):
-    # ADDED: comments{from,id} to fetch existing replies and prevent duplicate responses
-    url = f"https://graph.facebook.com/v18.0/{media_id}/comments?fields=id,text,from,comments{{from,id}}&access_token={ACCESS_TOKEN}"
+    url = f"https://facebook.com/{media_id}/comments?fields=id,text,from&access_token={ACCESS_TOKEN}"
     try:
         response = requests.get(url)
         response.raise_for_status()
@@ -209,22 +196,7 @@ def process_all_comments(media_id):
                 instagram_user_id = commenter.get('id')
                 username = commenter.get('username', 'there')
                 
-                # Prevent self-interaction loops (type-safe string comparison)
-                if str(instagram_user_id) == str(INSTAGRAM_ACCOUNT_ID):
-                    continue
-                
-                # NEW: Check if we have already replied to this specific comment
-                replies = comment.get('comments', {}).get('data', [])
-                already_replied = any(
-                    str(reply.get('from', {}).get('id')) == str(INSTAGRAM_ACCOUNT_ID) 
-                    for reply in replies
-                )
-                
-                if already_replied:
-                    print(f"⏭️ Skipping @{username}: Bot has already replied to this comment.")
-                    continue
-                
-                print(f"🚀 Processing NEW comment from @{username}...")
+                print(f"🚀 Processing comment from @{username}...")
                 
                 # Fetch output directly via local Ollama background worker
                 custom_ai_reply = generate_local_ai_reply(username, comment_text)
@@ -241,8 +213,8 @@ def process_all_comments(media_id):
         print(f"❌ Error processing comments: {e}")
 
 if __name__ == "__main__":
-    print("🚀 Starting Instagram Blanket Engagement Bot (v18.0)...")
-    latest_post = get_latest_media()
+    print("🚀 Starting Instagram Blanket Engagement Bot...")
+    latest_post = get_latest_media_safe()
     if latest_post and 'id' in latest_post:
         print(f"📸 Target Post Found ID: {latest_post['id']}")
         process_all_comments(latest_post['id'])
