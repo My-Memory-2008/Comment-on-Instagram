@@ -96,6 +96,13 @@
 
 
 
+
+
+
+
+
+
+
 import os
 import sys
 import requests
@@ -105,6 +112,8 @@ INSTAGRAM_ACCOUNT_ID = os.environ.get("INSTAGRAM_ACCOUNT_ID")
 
 if not ACCESS_TOKEN or not INSTAGRAM_ACCOUNT_ID:
     print("❌ ERROR: Missing required GitHub Secrets!")
+    print(f"-> INSTAGRAM_ACCESS_TOKEN: {'Found' if ACCESS_TOKEN else 'MISSING'}")
+    print(f"-> INSTAGRAM_ACCOUNT_ID: {'Found' if INSTAGRAM_ACCOUNT_ID else 'MISSING'}")
     sys.exit(1)
 
 def generate_local_ai_reply(username, comment_text):
@@ -142,36 +151,19 @@ def generate_local_ai_reply(username, comment_text):
     return "Thanks for hanging out! Check your DMs, I just sent you a message! 📥"
 
 def get_latest_media():
-    """
-    Fetches the media feed directly. If the saved ID encounters an error, 
-    the endpoint automatically pivots to a node query using 'me' mapping.
-    """
     url = f"https://graph.facebook.com/v18.0/{INSTAGRAM_ACCOUNT_ID}/media?access_token={ACCESS_TOKEN}"
     try:
         response = requests.get(url)
-        if response.status_code == 200:
-            data = response.json().get('data', [])
-            return data[0] if data else None
-            
-        print(f"⚠️ Endpoint A returned {response.status_code}. Pivoting to secondary network node discovery...")
+        response.raise_for_status()
+        data = response.json().get('data', [])
+        return data[0] if data else None
     except Exception as e:
-        print(f"⚠️ Endpoint A failed ({e}). Pivoting to secondary network node discovery...")
-
-    # Fallback lookup using 'me' alias
-    fallback_url = f"https://graph.facebook.com/v18.0/me/media?access_token={ACCESS_TOKEN}"
-    try:
-        res = requests.get(fallback_url)
-        res.raise_for_status()
-        media_data = res.json().get('data', [])
-        return media_data[0] if media_data else None
-    except Exception as e:
-        print(f"❌ Critical Error: All Meta endpoint discovery branches exhausted: {e}")
+        print(f"❌ Failed to fetch media: {e}")
         return None
 
 def send_dm(user_id, message_text):
-    # NOTE: This endpoint REQUIRES a Page Access Token (not a User Access Token) 
-    # with the 'pages_messaging' permission granted.
-    url = f"https://graph.facebook.com/v18.0/me/messages?access_token={ACCESS_TOKEN}"
+    # FIXED: The correct endpoint for Instagram Messaging is /{ig-user-id}/messages
+    url = f"https://graph.facebook.com/v18.0/{INSTAGRAM_ACCOUNT_ID}/messages?access_token={ACCESS_TOKEN}"
     payload = {
         "recipient": {"id": str(user_id)},
         "message": {"text": message_text}
@@ -179,13 +171,10 @@ def send_dm(user_id, message_text):
     try:
         response = requests.post(url, json=payload)
         response_json = response.json()
-        
         if response.status_code == 200:
             print(f"✅ DM sent successfully to {user_id}")
         else:
-            # This will now print the EXACT reason Facebook rejected the DM (e.g., permission error, invalid ID)
             print(f"❌ Failed to send DM to {user_id}. Facebook API Error: {response_json}")
-            
     except Exception as e:
         print(f"❌ Exception while sending DM to {user_id}: {e}")
 
@@ -220,11 +209,11 @@ def process_all_comments(media_id):
                 instagram_user_id = commenter.get('id')
                 username = commenter.get('username', 'there')
                 
-                # Prevent self-interaction loops
+                # Prevent self-interaction loops (type-safe string comparison)
                 if str(instagram_user_id) == str(INSTAGRAM_ACCOUNT_ID):
                     continue
                 
-                # NEW: Check if we have already replied to this comment
+                # NEW: Check if we have already replied to this specific comment
                 replies = comment.get('comments', {}).get('data', [])
                 already_replied = any(
                     str(reply.get('from', {}).get('id')) == str(INSTAGRAM_ACCOUNT_ID) 
