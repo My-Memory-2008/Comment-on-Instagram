@@ -1,40 +1,80 @@
 import os
+import sys
 import requests
 
-# Load secrets from environment variables
 ACCESS_TOKEN = os.environ.get("INSTAGRAM_ACCESS_TOKEN")
 INSTAGRAM_ACCOUNT_ID = os.environ.get("INSTAGRAM_ACCOUNT_ID")
 
-def get_latest_media():
-    url = f"https://facebook.com{INSTAGRAM_ACCOUNT_ID}/media?access_token={ACCESS_TOKEN}"
-    response = requests.get(url).json()
-    return response.get('data', [])
+if not ACCESS_TOKEN or not INSTAGRAM_ACCOUNT_ID:
+    print("❌ ERROR: Missing required GitHub Secrets!")
+    print(f"-> INSTAGRAM_ACCESS_TOKEN: {'Found' if ACCESS_TOKEN else 'MISSING'}")
+    print(f"-> INSTAGRAM_ACCOUNT_ID: {'Found' if INSTAGRAM_ACCOUNT_ID else 'MISSING'}")
+    sys.exit(1)
 
-def check_and_reply_to_comments(media_id):
-    # Fetch comments for a specific post
-    url = f"https://facebook.com{media_id}/comments?access_token={ACCESS_TOKEN}"
-    comments = requests.get(url).json().get('data', [])
-    
-    for comment in comments:
-        comment_id = comment.get('id')
-        text = comment.get('text', '')
+def get_latest_media():
+    url = f"https://facebook.com/{INSTAGRAM_ACCOUNT_ID}/media?access_token={ACCESS_TOKEN}"
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        data = response.json().get('data', [])
+        return data[0] if data else None  # Grab only the single latest post
+    except Exception as e:
+        print(f"❌ Failed to fetch media: {e}")
+        return None
+
+def send_dm(user_id, message_text):
+    url = f"https://facebook.comme/messages?access_token={ACCESS_TOKEN}"
+    payload = {
+        "recipient": {"id": user_id},
+        "message": {"text": message_text}
+    }
+    requests.post(url, json=payload)
+
+def reply_to_public_comment(comment_id):
+    url = f"https://facebook.com/{comment_id}/replies"
+    payload = {
+        'message': "Thanks for hanging out! Check your DMs, I just sent you a message! 📥",
+        'access_token': ACCESS_TOKEN
+    }
+    requests.post(url, data=payload)
+
+def process_all_comments(media_id):
+    url = f"https://facebook.com/{media_id}/comments?fields=id,text,from&access_token={ACCESS_TOKEN}"
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        comments = response.json().get('data', [])
+        print(f"💬 Found {len(comments)} total comments to evaluate.")
         
-        # Simple keyword check (Example: Trigger if they ask for a link or info)
-        if "info" in text.lower() or "link" in text.lower():
-            reply_url = f"https://facebook.com{comment_id}/replies"
-            payload = {
-                'message': "Thanks for asking! Check your DMs for the details.",
-                'access_token': ACCESS_TOKEN
-            }
-            # Post the reply comment
-            requests.post(reply_url, data=payload)
+        for comment in comments:
+            comment_id = comment.get('id')
+            commenter = comment.get('from')
             
-            # Note: To send a direct message (DM) instead of a comment reply, 
-            # you would use the Messenger API for Instagram components.
+            if commenter:
+                instagram_user_id = commenter.get('id')
+                username = commenter.get('username', 'there')
+                
+                # CRITICAL: Skip if the comment is from your own bot/account to avoid infinite loops
+                if instagram_user_id == INSTAGRAM_ACCOUNT_ID:
+                    continue
+                
+                print(f"🚀 Processing comment from @{username}...")
+                
+                # 1. Post a public comment reply to boost algorithm metrics
+                reply_to_public_comment(comment_id)
+                
+                # 2. Fire off the private DM engagement message
+                dm_text = f"Hey {username}! Thanks for dropping a comment on my recent post. Let's connect!"
+                send_dm(instagram_user_id, dm_text)
+                
+    except Exception as e:
+        print(f"❌ Error processing comments: {e}")
 
 if __name__ == "__main__":
-    media_list = get_latest_media()
-    if media_list:
-        # Check the most recent post
-        latest_post_id = media_list[0]['id']
-        check_and_reply_to_comments(latest_post_id)
+    print("🚀 Starting Instagram Blanket Engagement Bot...")
+    latest_post = get_latest_media()
+    if latest_post:
+        print(f"📸 Target Post Found ID: {latest_post['id']}")
+        process_all_comments(latest_post['id'])
+    else:
+        print("🤷 No recent posts found or API error occurred.")
