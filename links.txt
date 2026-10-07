@@ -1,6 +1,6 @@
 Since meta developers console is so not good , these are the thinks from where we can access it easily
 
-1.https://developers.facebook.com/apps/1871210410730817/dashboard/?business_id=1278547284160754
+1.https://developers.facebook.com/apps/1784015329551128/dashboard/?business_id=1278547284160754
 
 the above link is for going into the apps section ,since the app sections is not quite largely available in this facebook developers website. here we can get the app id and the app secret for the apps .
 
