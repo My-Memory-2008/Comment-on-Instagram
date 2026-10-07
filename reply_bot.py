@@ -583,53 +583,33 @@
 
 
 
-
 import os
 import sys
-import json
 import requests
 
 ACCESS_TOKEN = os.environ.get("INSTAGRAM_ACCESS_TOKEN")
 INSTAGRAM_ACCOUNT_ID = os.environ.get("INSTAGRAM_ACCOUNT_ID")
-HISTORY_FILE = "replied_comments_cache.json"
 
 if not ACCESS_TOKEN or not INSTAGRAM_ACCOUNT_ID:
     print("❌ ERROR: Missing required GitHub Secrets!")
+    print(f"-> INSTAGRAM_ACCESS_TOKEN: {'Found' if ACCESS_TOKEN else 'MISSING'}")
+    print(f"-> INSTAGRAM_ACCOUNT_ID: {'Found' if INSTAGRAM_ACCOUNT_ID else 'MISSING'}")
     sys.exit(1)
-
-def load_reply_history():
-    """Loads the list of already handled specific comment IDs from a local file."""
-    if os.path.exists(HISTORY_FILE):
-        try:
-            with open(HISTORY_FILE, "r") as f:
-                return set(json.load(f))
-        except Exception:
-            return set()
-    return set()
-
-def save_reply_history(history_set):
-    """Saves the updated list of handled unique comment IDs back to the file."""
-    try:
-        with open(HISTORY_FILE, "w") as f:
-            json.dump(list(history_set), f)
-    except Exception as e:
-        print(f"⚠️ Failed to write local history cache: {e}")
 
 def generate_local_ai_reply(username, comment_text):
     """
-    Queries Ollama to generate a lively short reaction combining a text word 
-    with expressive expression emojis under 20 characters total.
+    Connects to the local Ollama instance running inside the 
+    GitHub Action runner to query the Qwen model architecture.
     """
     print(f"🤖 Querying local Ollama server for @{username}...")
     ollama_url = "http://localhost:11434/api/generate"
     
     prompt = (
-        f"A viewer named @{username} left this comment on your Instagram post: '{comment_text}'. "
-        f"Generate an ultra-short reply that combines exactly one conversational word of gratitude or respect "
-        f"(like 'Thanks!', 'Great!', 'Wow!', 'Love it!', 'Appreciate it!') with 3-4 vivid expression emojis "
-        f"(like 🔥, 🙌, ❤️, 🫡, 🌟, 💯). "
-        f"The total string length MUST be a strict maximum of 20 characters. Prioritize emojis heavily "
-        f"but include at least one text word. Do not include quotes or meta text."
+        f"A viewer named @{username} left this comment on your post: '{comment_text}'. "
+        f"Write an ultra-short reply under 20 characters total. It must combine exactly "
+        f"one word of expression or gratitude (like 'Thanks!', 'Great!', 'Wow!', 'Love it!') "
+        f"with multiple raw emojis (like 🙌, 🔥, ❤️, 🫡, 🌟, 💯). "
+        f"Prioritize emojis heavily but include the one word. Do not include quotes."
     )
     
     payload = {
@@ -648,8 +628,8 @@ def generate_local_ai_reply(username, comment_text):
             ai_text = response.json().get("response", "").strip()
             if ai_text.startswith('"') and ai_text.endswith('"'):
                 ai_text = ai_text[1:-1]
-            
-            # Hard limit truncation fallback to guarantee the 20-character rule
+                
+            # Strict safety truncate to completely enforce your 20-character rule
             if len(ai_text) > 20:
                 ai_text = ai_text[:17] + "..."
             return ai_text
@@ -659,85 +639,81 @@ def generate_local_ai_reply(username, comment_text):
     return "Thanks! 🙌🔥"
 
 def get_latest_media():
-    """
-    Tries the primary account media endpoint first. If it encounters a 404 or bad request,
-    it automatically attempts a secondary request to the universal 'me/media' node mapping.
-    """
-    # Primary Target: Account ID specific endpoint node
-    primary_url = f"https://facebook.com/{INSTAGRAM_ACCOUNT_ID}/media?access_token={ACCESS_TOKEN}"
+    # UNTOUCHED WORKING ORIGINAL ENDPOINT
+    url = f"https://graph.facebook.com/v18.0/{INSTAGRAM_ACCOUNT_ID}/media?access_token={ACCESS_TOKEN}"
     try:
-        response = requests.get(primary_url)
-        if response.status_code == 200:
-            data = response.json().get('data', [])
-            if data:
-                return data
-    except Exception:
-        pass
-
-    print("⚠️ Primary node lookup failed with an error. Activating automatic universal fallback...")
-    
-    # Failover Target: Universal Node Fallback to completely bypass account block checks
-    fallback_url = f"https://facebook.comme/media?access_token={ACCESS_TOKEN}"
-    try:
-        response = requests.get(fallback_url)
+        response = requests.get(url)
         response.raise_for_status()
         data = response.json().get('data', [])
-        return data if data else None
+        return data[0] if data else None  # Safely returns the single most recent post
     except Exception as e:
-        print(f"❌ Critical Error: All media discovery paths failed: {e}")
+        print(f"❌ Failed to fetch media: {e}")
         return None
 
 def send_dm(user_id, message_text):
-    # FIXED: Re-enforced graph endpoint domain to protect communication stability
-    url = f"https://facebook.comme/messages?access_token={ACCESS_TOKEN}"
+    # UNTOUCHED WORKING ORIGINAL ENDPOINT
+    url = f"https://facebook.com/{ACCESS_TOKEN}"
     payload = {
         "recipient": {"id": user_id},
         "message": {"text": message_text}
     }
-    try:
-        requests.post(url, json=payload, timeout=15)
-    except Exception as e:
-        print(f"⚠️ Could not deliver private DM to user: {e}")
+    requests.post(url, json=payload)
 
 def reply_to_public_comment(comment_id, message_text):
-    url = f"https://facebook.com/{comment_id}/replies"
+    # INTEGRATED WITH THE DYNAMIC AI REPLY TEXT
+    url = f"https://graph.facebook.com/v18.0/{comment_id}/replies"
     payload = {
         'message': message_text,
         'access_token': ACCESS_TOKEN
     }
     requests.post(url, data=payload)
 
+def has_bot_replied_to_this_comment(comment_id):
+    """
+    Checks the live sub-replies of this specific comment ID.
+    Returns True only if our own account ID has already responded to it.
+    """
+    url = f"https://graph.facebook.com/v18.0/{comment_id}/replies?fields=from&access_token={ACCESS_TOKEN}"
+    try:
+        res = requests.get(url)
+        if res.status_code == 200:
+            replies = res.json().get('data', [])
+            for reply in replies:
+                author = reply.get('from', {})
+                if str(author.get('id')) == str(INSTAGRAM_ACCOUNT_ID):
+                    return True
+    except Exception:
+        pass
+    return False
+
 def process_all_comments(media_id):
-    url = f"https://facebook.com/{media_id}/comments?fields=id,text,from&access_token={ACCESS_TOKEN}"
+    # UNTOUCHED WORKING ORIGINAL ENDPOINT
+    url = f"https://graph.facebook.com/v18.0/{media_id}/comments?fields=id,text,from&access_token={ACCESS_TOKEN}"
     try:
         response = requests.get(url)
         response.raise_for_status()
         comments = response.json().get('data', [])
         print(f"💬 Found {len(comments)} total comments to evaluate.")
         
-        # Load local static cache tracker
-        replied_history = load_reply_history()
-        history_updated = False
-        
         for comment in comments:
             comment_id = comment.get('id')
-            comment_text = comment.get('text', '')
+            comment_text = comment.get('text', '') # Safe string capture
             commenter = comment.get('from')
             
             if commenter:
                 instagram_user_id = commenter.get('id')
                 username = commenter.get('username', 'there')
                 
-                # Rule 1: Prevent the bot from talking to itself
+                # Prevent the bot from talking to itself
                 if instagram_user_id == INSTAGRAM_ACCOUNT_ID:
                     continue
                 
-                # Rule 2: Bulletproof Specific Comment ID check to allow multiple comments from same user
-                if comment_id in replied_history:
-                    print(f"⏭️ Skipping comment ID {comment_id} from @{username} (Already replied to this unique comment node).")
+                # Deduplication Filter: Checks if THIS specific comment was already answered
+                if has_bot_replied_to_this_comment(comment_id):
+                    print(f"⏭️ Skipping comment ID {comment_id} from @{username} (Already replied to this specific text).")
                     continue
                 
-                print(f"🚀 Processing new distinct comment from @{username}...")
+                print(f"🚀 Processing comment from @{username}...")
                 
                 # Call local Qwen runner inside actions container
                 custom_ai_reply = generate_local_ai_reply(username, comment_text)
@@ -750,24 +726,16 @@ def process_all_comments(media_id):
                 dm_text = f"Hey {username}! Thanks for dropping a comment on my recent post. Let's connect!"
                 send_dm(instagram_user_id, dm_text)
                 
-                # Register unique comment node into history index tracking array
-                replied_history.add(comment_id)
-                history_updated = True
-                
-        # Write back changes if any updates were caught
-        if history_updated:
-            save_reply_history(replied_history)
-                
     except Exception as e:
         print(f"❌ Error processing comments: {e}")
 
 if __name__ == "__main__":
     print("🚀 Starting Instagram Blanket Engagement Bot...")
-    media_data = get_latest_media()
-    if media_data and len(media_data) > 0:
-        latest_post = media_data[0] # Target the direct dictionary object context from the list
+    latest_post = get_latest_media()
+    if latest_post:
         print(f"📸 Target Post Found ID: {latest_post['id']}")
         process_all_comments(latest_post['id'])
     else:
         print("🤷 No recent posts found or API error occurred.")
+
 
