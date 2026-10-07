@@ -95,13 +95,15 @@
 
 
 
-
 import os
 import sys
 import requests
 
 ACCESS_TOKEN = os.environ.get("INSTAGRAM_ACCESS_TOKEN")
 INSTAGRAM_ACCOUNT_ID = os.environ.get("INSTAGRAM_ACCOUNT_ID")
+
+# Use a stable Graph API version (v19.0 or v20.0)
+API_VERSION = "v19.0"
 
 if not ACCESS_TOKEN or not INSTAGRAM_ACCOUNT_ID:
     print("❌ ERROR: Missing required GitHub Secrets!")
@@ -143,38 +145,49 @@ def generate_local_ai_reply(username, comment_text):
     return f"Hey @{username}! Thanks for dropping a comment on my recent post. Let's connect! 💬"
 
 def get_latest_media():
-    # FIXED: Re-corrected domain endpoint back to graph.facebook.com
-    url = f"https://facebook.com/{INSTAGRAM_ACCOUNT_ID}/media?access_token={ACCESS_TOKEN}"
+    # FIXED: Use correct graph.facebook.com domain and API version
+    url = f"https://graph.facebook.com/{API_VERSION}/{INSTAGRAM_ACCOUNT_ID}/media?access_token={ACCESS_TOKEN}"
     try:
         response = requests.get(url)
         response.raise_for_status()
         data = response.json().get('data', [])
-        return data if data else None
+        # FIXED: Return the first (latest) media dictionary, not the whole list
+        return data[0] if data else None
     except Exception as e:
         print(f"❌ Failed to fetch media: {e}")
         return None
 
 def send_dm(user_id, message_text):
-    # FIXED: Re-corrected domain endpoint back to graph.facebook.com
-    url = f"https://facebook.comme/messages?access_token={ACCESS_TOKEN}"
+    # FIXED: Correct Graph API endpoint and fixed typo ("facebook.comme" -> "graph.facebook.com")
+    url = f"https://graph.facebook.com/{API_VERSION}/me/messages?access_token={ACCESS_TOKEN}"
     payload = {
         "recipient": {"id": user_id},
         "message": {"text": message_text}
     }
-    requests.post(url, json=payload)
+    try:
+        response = requests.post(url, json=payload)
+        response.raise_for_status()
+        print(f"✅ DM sent successfully to {user_id}")
+    except Exception as e:
+        print(f"❌ Failed to send DM: {e}")
 
 def reply_to_public_comment(comment_id, message_text):
-    # FIXED: Re-corrected domain endpoint back to graph.facebook.com
-    url = f"https://facebook.com/{comment_id}/replies"
+    # FIXED: Correct Graph API endpoint for replying to comments
+    url = f"https://graph.facebook.com/{API_VERSION}/{comment_id}/replies"
     payload = {
         'message': message_text,
         'access_token': ACCESS_TOKEN
     }
-    requests.post(url, data=payload)
+    try:
+        response = requests.post(url, data=payload)
+        response.raise_for_status()
+        print(f"✅ Replied to comment {comment_id}")
+    except Exception as e:
+        print(f"❌ Failed to reply to comment: {e}")
 
 def process_all_comments(media_id):
-    # FIXED: Re-corrected domain endpoint back to graph.facebook.com
-    url = f"https://facebook.com/{media_id}/comments?fields=id,text,from&access_token={ACCESS_TOKEN}"
+    # FIXED: Correct Graph API endpoint for fetching comments
+    url = f"https://graph.facebook.com/{API_VERSION}/{media_id}/comments?fields=id,text,from&access_token={ACCESS_TOKEN}"
     try:
         response = requests.get(url)
         response.raise_for_status()
@@ -184,13 +197,14 @@ def process_all_comments(media_id):
         for comment in comments:
             comment_id = comment.get('id')
             comment_text = comment.get('text', '')
-            commenter = comment.get('from')
+            commenter = comment.get('from', {})
             
             if commenter:
                 instagram_user_id = commenter.get('id')
                 username = commenter.get('username', 'there')
                 
-                if instagram_user_id == INSTAGRAM_ACCOUNT_ID:
+                # Ensure we don't reply to our own account's comments
+                if str(instagram_user_id) == str(INSTAGRAM_ACCOUNT_ID):
                     continue
                 
                 print(f"🚀 Processing comment from @{username}: '{comment_text}'")
