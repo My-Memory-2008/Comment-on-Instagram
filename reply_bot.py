@@ -96,8 +96,6 @@
 
 
 
-
-
 import os
 import sys
 import requests
@@ -148,7 +146,6 @@ def get_latest_media():
     Fetches the media feed directly. If the saved ID encounters an error, 
     the endpoint automatically pivots to a node query using 'me' mapping.
     """
-    # Pipeline Endpoint A: Target specified structural mapping node
     url = f"https://graph.facebook.com/v18.0/{INSTAGRAM_ACCOUNT_ID}/media?access_token={ACCESS_TOKEN}"
     try:
         response = requests.get(url)
@@ -160,7 +157,7 @@ def get_latest_media():
     except Exception as e:
         print(f"⚠️ Endpoint A failed ({e}). Pivoting to secondary network node discovery...")
 
-    # Pipeline Endpoint B: Hard fallback lookup using 'me' alias to prevent 400 Bad Requests
+    # Fallback lookup using 'me' alias
     fallback_url = f"https://graph.facebook.com/v18.0/me/media?access_token={ACCESS_TOKEN}"
     try:
         res = requests.get(fallback_url)
@@ -172,7 +169,8 @@ def get_latest_media():
         return None
 
 def send_dm(user_id, message_text):
-    # FIXED: Correct Graph API v18.0 endpoint for sending Instagram DMs
+    # NOTE: This endpoint REQUIRES a Page Access Token (not a User Access Token) 
+    # with the 'pages_messaging' permission granted.
     url = f"https://graph.facebook.com/v18.0/me/messages?access_token={ACCESS_TOKEN}"
     payload = {
         "recipient": {"id": str(user_id)},
@@ -180,13 +178,18 @@ def send_dm(user_id, message_text):
     }
     try:
         response = requests.post(url, json=payload)
-        response.raise_for_status()
-        print(f"✅ DM sent successfully to {user_id}")
+        response_json = response.json()
+        
+        if response.status_code == 200:
+            print(f"✅ DM sent successfully to {user_id}")
+        else:
+            # This will now print the EXACT reason Facebook rejected the DM (e.g., permission error, invalid ID)
+            print(f"❌ Failed to send DM to {user_id}. Facebook API Error: {response_json}")
+            
     except Exception as e:
-        print(f"❌ Failed to send DM to {user_id}: {e}")
+        print(f"❌ Exception while sending DM to {user_id}: {e}")
 
 def reply_to_public_comment(comment_id, message_text):
-    # FIXED: Added proper error handling to prevent silent failures
     url = f"https://graph.facebook.com/v18.0/{comment_id}/replies"
     payload = {
         'message': message_text,
@@ -200,7 +203,8 @@ def reply_to_public_comment(comment_id, message_text):
         print(f"❌ Failed to reply to comment {comment_id}: {e}")
 
 def process_all_comments(media_id):
-    url = f"https://graph.facebook.com/v18.0/{media_id}/comments?fields=id,text,from&access_token={ACCESS_TOKEN}"
+    # ADDED: comments{from,id} to fetch existing replies and prevent duplicate responses
+    url = f"https://graph.facebook.com/v18.0/{media_id}/comments?fields=id,text,from,comments{{from,id}}&access_token={ACCESS_TOKEN}"
     try:
         response = requests.get(url)
         response.raise_for_status()
@@ -216,11 +220,22 @@ def process_all_comments(media_id):
                 instagram_user_id = commenter.get('id')
                 username = commenter.get('username', 'there')
                 
-                # Prevent self-interaction loops (compare as strings to be type-safe)
+                # Prevent self-interaction loops
                 if str(instagram_user_id) == str(INSTAGRAM_ACCOUNT_ID):
                     continue
                 
-                print(f"🚀 Processing comment from @{username}...")
+                # NEW: Check if we have already replied to this comment
+                replies = comment.get('comments', {}).get('data', [])
+                already_replied = any(
+                    str(reply.get('from', {}).get('id')) == str(INSTAGRAM_ACCOUNT_ID) 
+                    for reply in replies
+                )
+                
+                if already_replied:
+                    print(f"⏭️ Skipping @{username}: Bot has already replied to this comment.")
+                    continue
+                
+                print(f"🚀 Processing NEW comment from @{username}...")
                 
                 # Fetch output directly via local Ollama background worker
                 custom_ai_reply = generate_local_ai_reply(username, comment_text)
