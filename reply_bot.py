@@ -96,6 +96,7 @@
 
 
 
+
 import os
 import sys
 import requests
@@ -105,8 +106,6 @@ INSTAGRAM_ACCOUNT_ID = os.environ.get("INSTAGRAM_ACCOUNT_ID")
 
 if not ACCESS_TOKEN or not INSTAGRAM_ACCOUNT_ID:
     print("❌ ERROR: Missing required GitHub Secrets!")
-    print(f"-> INSTAGRAM_ACCESS_TOKEN: {'Found' if ACCESS_TOKEN else 'MISSING'}")
-    print(f"-> INSTAGRAM_ACCOUNT_ID: {'Found' if INSTAGRAM_ACCOUNT_ID else 'MISSING'}")
     sys.exit(1)
 
 def generate_local_ai_reply(username, comment_text):
@@ -115,7 +114,6 @@ def generate_local_ai_reply(username, comment_text):
     GitHub Action runner to query the Qwen model architecture.
     """
     print(f"🤖 Querying local Ollama server for @{username}...")
-    
     ollama_url = "http://localhost:11434/api/generate"
     
     prompt = (
@@ -144,20 +142,61 @@ def generate_local_ai_reply(username, comment_text):
         
     return "Thanks for hanging out! Check your DMs, I just sent you a message! 📥"
 
+def verify_and_get_true_instagram_id():
+    """
+    Validates if the provided ID is correct. If it throws a 400 error,
+    it automatically crawls Meta to discover the true Instagram Business Account ID.
+    """
+    # Test the provided ID first
+    test_url = f"https://graph.facebook.com/v18.0/{INSTAGRAM_ACCOUNT_ID}/media?access_token={ACCESS_TOKEN}"
+    test_res = requests.get(test_url)
+    if test_res.status_code == 200:
+        return INSTAGRAM_ACCOUNT_ID
+        
+    print("⚠️ Provided ID failed validation. Attempting automatic structural lookup...")
+    
+    # Discovery Step A: Fetch linked account fields using me/accounts
+    lookup_url = f"https://facebook.com/{ACCESS_TOKEN}"
+    try:
+        res = requests.get(lookup_url).json()
+        pages = res.get('data', [])
+        for page in pages:
+            ig_account = page.get('instagram_business_account')
+            if ig_account and ig_account.get('id'):
+                true_id = ig_account.get('id')
+                print(f"🎯 Successfully auto-discovered true Instagram ID: {true_id}")
+                return true_id
+    except Exception:
+        pass
+
+    # Discovery Step B: Try reading target profile context directly using fallback variables
+    direct_url = f"https://graph.facebook.com/v18.0/{INSTAGRAM_ACCOUNT_ID}?fields=instagram_business_account&access_token={ACCESS_TOKEN}"
+    try:
+        res = requests.get(direct_url).json()
+        true_id = res.get('instagram_business_account', {}).get('id')
+        if true_id:
+            print(f"🎯 Successfully discovered Instagram ID via Direct Node Check: {true_id}")
+            return true_id
+    except Exception:
+        pass
+
+    return INSTAGRAM_ACCOUNT_ID
+
+# Run verification hook before launching main pipeline loop
+TRUE_INSTAGRAM_ID = verify_and_get_true_instagram_id()
+
 def get_latest_media():
-    # KEEPING YOUR EXACT WORKING LOGIC UNTOUCHED
-    url = f"https://graph.facebook.com/v18.0/{INSTAGRAM_ACCOUNT_ID}/media?access_token={ACCESS_TOKEN}"
+    url = f"https://graph.facebook.com/v18.0/{TRUE_INSTAGRAM_ID}/media?access_token={ACCESS_TOKEN}"
     try:
         response = requests.get(url)
         response.raise_for_status()
         data = response.json().get('data', [])
-        return data[0] if data else None  # Safely returns the single most recent post
+        return data[0] if data else None  # Target array index matching your previous setup
     except Exception as e:
         print(f"❌ Failed to fetch media: {e}")
         return None
 
 def send_dm(user_id, message_text):
-    # KEEPING YOUR EXACT WORKING LOGIC UNTOUCHED
     url = f"https://facebook.com/{ACCESS_TOKEN}"
     payload = {
         "recipient": {"id": user_id},
@@ -166,7 +205,6 @@ def send_dm(user_id, message_text):
     requests.post(url, json=payload)
 
 def reply_to_public_comment(comment_id, message_text):
-    # DYNAMIC AI FEEDBACK CONTEXT ADDED
     url = f"https://graph.facebook.com/v18.0/{comment_id}/replies"
     payload = {
         'message': message_text,
@@ -175,7 +213,6 @@ def reply_to_public_comment(comment_id, message_text):
     requests.post(url, data=payload)
 
 def process_all_comments(media_id):
-    # KEEPING YOUR EXACT WORKING LOGIC UNTOUCHED
     url = f"https://graph.facebook.com/v18.0/{media_id}/comments?fields=id,text,from&access_token={ACCESS_TOKEN}"
     try:
         response = requests.get(url)
@@ -185,24 +222,24 @@ def process_all_comments(media_id):
         
         for comment in comments:
             comment_id = comment.get('id')
-            comment_text = comment.get('text', '') # Fetch raw message input safely
+            comment_text = comment.get('text', '')
             commenter = comment.get('from')
             
             if commenter:
                 instagram_user_id = commenter.get('id')
                 username = commenter.get('username', 'there')
                 
-                # Prevent the bot from talking to itself
-                if instagram_user_id == INSTAGRAM_ACCOUNT_ID:
+                # Prevent self-loop triggers
+                if instagram_user_id == TRUE_INSTAGRAM_ID:
                     continue
                 
                 print(f"🚀 Processing comment from @{username}...")
                 
-                # Dynamic AI Processing Step
+                # Dynamic Ollama text generation integration
                 custom_ai_reply = generate_local_ai_reply(username, comment_text)
                 print(f"✨ AI Reply Created: {custom_ai_reply}")
                 
-                # 1. Post public comment reply powered by local Qwen
+                # 1. Post the custom AI message directly on the comment thread
                 reply_to_public_comment(comment_id, custom_ai_reply)
                 
                 # 2. Fire the private engagement DM
@@ -220,3 +257,4 @@ if __name__ == "__main__":
         process_all_comments(latest_post['id'])
     else:
         print("🤷 No recent posts found or API error occurred.")
+
