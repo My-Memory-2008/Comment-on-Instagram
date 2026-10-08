@@ -1,7 +1,7 @@
 name: Auto-Refresh Instagram Access Token
 
 on:
-  # Run automatically every 45 days (well before the 60-day expiration)
+  # Run automatically every 30 days (well before the 60-day expiration)
   schedule:
     - cron: '0 0 1 * *'
   # Allow you to run it manually at any time from the Actions tab
