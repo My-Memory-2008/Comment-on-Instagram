@@ -46,10 +46,11 @@ jobs:
         run: |
           echo "🔐 Updating GitHub Secret 'INSTAGRAM_ACCESS_TOKEN'..."
           
-          # Authenticate GitHub CLI with the PAT
-          echo "${{ secrets.PAT_FOR_SECRETS }}" | gh auth login --with-token
+          # Verify that gh CLI is properly authenticated with the PAT
+          echo "🔍 Checking GitHub CLI authentication..."
+          gh auth status
           
-          # Update the repository secret
+          # Update the repository secret (gh automatically uses the GH_TOKEN env var)
           gh secret set INSTAGRAM_ACCESS_TOKEN --body "${{ steps.token_exchange.outputs.new_token }}"
           
           echo "✅ Secret updated successfully! Your bot will now use the fresh token."
