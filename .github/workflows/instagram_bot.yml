@@ -34,9 +34,13 @@
 name: Instagram AI Engagement Bot (Local Qwen)
 
 on:
-  schedule:
-    - cron: '*/15 * * * *' # Automatically runs every 15 minutes
   workflow_dispatch: # Allows manual test triggers
+
+
+permissions:
+  contents: read
+  actions: write
+
 
 jobs:
   run-bot:
@@ -93,3 +97,44 @@ jobs:
           INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
           INSTAGRAM_ACCOUNT_ID: ${{ secrets.INSTAGRAM_ACCOUNT_ID }}
         run: python reply_bot.py
+
+
+      - name: Wait 20 seconds before triggering restart.yml
+        run: |
+          echo "Waiting 20 seconds before triggering automate.yml..."
+          sleep 20
+
+      - name: Trigger restart.yml with Retries
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "Triggering restart.yml on branch/tag: ${{ github.ref_name }}"
+          
+          MAX_ATTEMPTS=10
+          ATTEMPT=1
+          SUCCESS=false
+          
+          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+            echo "Attempt $ATTEMPT of $MAX_ATTEMPTS..."
+            
+            if gh workflow run restart.yml --ref "${{ github.ref_name }}"; then
+              echo "restart.yml triggered successfully."
+              SUCCESS=true
+              break
+            else
+              echo "Attempt $ATTEMPT failed."
+              if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+                echo "Waiting 15 seconds before next retry..."
+                sleep 15
+              fi
+            fi
+            
+            ATTEMPT=$((ATTEMPT + 1))
+          done
+          
+          if [ "$SUCCESS" = false ]; then
+            echo "Error: Failed to trigger restart.yml after $MAX_ATTEMPTS attempts."
+            exit 1
+          fi
+          
+          echo "instagram_bot.yml will now finish and terminate."
