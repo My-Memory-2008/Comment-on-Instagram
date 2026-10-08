@@ -599,16 +599,16 @@ if not ACCESS_TOKEN or not INSTAGRAM_ACCOUNT_ID:
 
 def generate_local_ai_reply(username, comment_text):
     """
-    Connects to the local Ollama instance running inside the 
+    Queries your local Ollama instance running inside the 
     GitHub Action runner to query the Qwen model architecture.
     """
     print(f"🤖 Querying local Ollama server for @{username}...")
     ollama_url = "http://localhost:11434/api/generate"
     
     prompt = (
-        f"A viewer named @{username} commented: '{comment_text}'. "
+        f"A viewer named @{username} left this comment on your post: '{comment_text}'. "
         f"Write an ultra-short reply under 20 characters total. It must combine exactly "
-        f"one word of appreciation, respect, or gratitude (like 'Thanks!', 'Great!', 'Wow!', 'Love it!') "
+        f"one word of appreciation or vibe (like 'Thanks!', 'Great!', 'Wow!', 'Love it!') "
         f"with multiple raw emojis (like 🙌, 🔥, ❤️, 🫡, 🌟, 💯). "
         f"Prioritize emojis heavily but include the one text word. Do not include quotes."
     )
@@ -641,7 +641,7 @@ def generate_local_ai_reply(username, comment_text):
 
 def get_latest_media():
     # UNTOUCHED WORKING ORIGINAL ENDPOINT
-    url = f"https://graph.facebook.com/v18.0/{INSTAGRAM_ACCOUNT_ID}/media?access_token={ACCESS_TOKEN}"
+    url = f"https://facebook.com/{INSTAGRAM_ACCOUNT_ID}/media?access_token={ACCESS_TOKEN}"
     try:
         response = requests.get(url)
         response.raise_for_status()
@@ -662,7 +662,7 @@ def send_dm(user_id, message_text):
 
 def reply_to_public_comment(comment_id, message_text):
     # INTEGRATED WITH THE DYNAMIC AI REPLY TEXT
-    url = f"https://graph.facebook.com/v18.0/{comment_id}/replies"
+    url = f"https://facebook.com/{comment_id}/replies"
     payload = {
         'message': message_text,
         'access_token': ACCESS_TOKEN
@@ -674,7 +674,7 @@ def has_bot_replied_to_this_comment(comment_id):
     Checks the live sub-replies of this specific comment ID.
     Returns True only if our own account ID has already responded to it.
     """
-    url = f"https://graph.facebook.com/v18.0/{comment_id}/replies?fields=from&access_token={ACCESS_TOKEN}"
+    url = f"https://facebook.com/{comment_id}/replies?fields=from&access_token={ACCESS_TOKEN}"
     try:
         res = requests.get(url)
         if res.status_code == 200:
@@ -689,7 +689,7 @@ def has_bot_replied_to_this_comment(comment_id):
 
 def process_all_comments(media_id):
     # UNTOUCHED WORKING ORIGINAL ENDPOINT
-    url = f"https://graph.facebook.com/v18.0/{media_id}/comments?fields=id,text,from&access_token={ACCESS_TOKEN}"
+    url = f"https://facebook.com/{media_id}/comments?fields=id,text,from&access_token={ACCESS_TOKEN}"
     try:
         response = requests.get(url)
         response.raise_for_status()
@@ -738,4 +738,3 @@ if __name__ == "__main__":
         process_all_comments(latest_post['id'])
     else:
         print("🤷 No recent posts found or API error occurred.")
-
