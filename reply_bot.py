@@ -580,8 +580,6 @@
 
 
 
-
-
 import os
 import sys
 import requests
@@ -642,22 +640,21 @@ def get_latest_media():
     Tries the primary account media endpoint first. If it encounters a 404 or redirect,
     it automatically falls back to the universal 'me/media' node mapping.
     """
-    # Try the original working endpoint first
-    url = f"https://facebook.com/{INSTAGRAM_ACCOUNT_ID}/media?access_token={ACCESS_TOKEN}"
+    # FIXED: Correct Graph API domain, version, and slash formatting
+    url = f"https://graph.facebook.com/v20.0/{INSTAGRAM_ACCOUNT_ID}/media?access_token={ACCESS_TOKEN}"
     try:
         response = requests.get(url)
-        # Only accept actual valid API data responses
-        if response.status_code == 200 and "www.facebook.com" not in response.url:
+        if response.status_code == 200:
             data = response.json().get('data', [])
             if data:
                 return data[0]
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"⚠️ Primary endpoint failed: {e}")
 
-    print("⚠️ Primary endpoint failed or redirected. Activating automatic universal fallback route...")
+    print("⚠️ Primary endpoint failed or returned no data. Activating automatic universal fallback route...")
     
-    # Universal Fallback Route: Bypasses explicit account node blocks
-    fallback_url = f"https://facebook.comme/media?access_token={ACCESS_TOKEN}"
+    # FIXED: Corrected typo 'facebook.comme' to 'graph.facebook.com/v20.0/me'
+    fallback_url = f"https://graph.facebook.com/v20.0/me/media?access_token={ACCESS_TOKEN}"
     try:
         response = requests.get(fallback_url)
         response.raise_for_status()
@@ -668,29 +665,40 @@ def get_latest_media():
         return None
 
 def send_dm(user_id, message_text):
-    # UNTOUCHED WORKING ORIGINAL ENDPOINT
-    url = f"https://facebook.com/{ACCESS_TOKEN}"
+    # FIXED: Correct Instagram Messaging API endpoint
+    url = f"https://graph.facebook.com/v20.0/me/messages?access_token={ACCESS_TOKEN}"
     payload = {
-        "recipient": {"id": user_id},
+        "recipient": {"id": str(user_id)},
         "message": {"text": message_text}
     }
-    requests.post(url, json=payload)
+    try:
+        response = requests.post(url, json=payload)
+        response.raise_for_status()
+        print(f"✅ DM sent successfully to {user_id}")
+    except Exception as e:
+        print(f"⚠️ Failed to send DM to {user_id}: {e}")
 
 def reply_to_public_comment(comment_id, message_text):
-    # INTEGRATED WITH THE DYNAMIC AI REPLY TEXT
-    url = f"https://facebook.com/{comment_id}/replies"
+    # FIXED: Correct Graph API endpoint for replying to comments
+    url = f"https://graph.facebook.com/v20.0/{comment_id}/replies"
     payload = {
         'message': message_text,
         'access_token': ACCESS_TOKEN
     }
-    requests.post(url, data=payload)
+    try:
+        response = requests.post(url, data=payload)
+        response.raise_for_status()
+        print(f"✅ Replied to comment {comment_id}")
+    except Exception as e:
+        print(f"⚠️ Failed to reply to comment {comment_id}: {e}")
 
 def has_bot_replied_to_this_comment(comment_id):
     """
     Checks the live sub-replies of this specific comment ID.
     Returns True only if our own account ID has already responded to it.
     """
-    url = f"https://facebook.com/{comment_id}/replies?fields=from&access_token={ACCESS_TOKEN}"
+    # FIXED: Correct Graph API endpoint for fetching comment replies
+    url = f"https://graph.facebook.com/v20.0/{comment_id}/replies?fields=from&access_token={ACCESS_TOKEN}"
     try:
         res = requests.get(url)
         if res.status_code == 200:
@@ -704,8 +712,8 @@ def has_bot_replied_to_this_comment(comment_id):
     return False
 
 def process_all_comments(media_id):
-    # UNTOUCHED WORKING ORIGINAL ENDPOINT
-    url = f"https://facebook.com/{media_id}/comments?fields=id,text,from&access_token={ACCESS_TOKEN}"
+    # FIXED: Correct Graph API endpoint for fetching media comments
+    url = f"https://graph.facebook.com/v20.0/{media_id}/comments?fields=id,text,from&access_token={ACCESS_TOKEN}"
     try:
         response = requests.get(url)
         response.raise_for_status()
@@ -722,7 +730,7 @@ def process_all_comments(media_id):
                 username = commenter.get('username', 'there')
                 
                 # Prevent the bot from talking to itself
-                if instagram_user_id == INSTAGRAM_ACCOUNT_ID:
+                if str(instagram_user_id) == str(INSTAGRAM_ACCOUNT_ID):
                     continue
                 
                 # Deduplication Filter: Safely checks if THIS specific comment was already answered
