@@ -579,7 +579,6 @@
 
 
 
-
 import os
 import sys
 import requests
@@ -594,10 +593,6 @@ if not ACCESS_TOKEN or not INSTAGRAM_ACCOUNT_ID:
     sys.exit(1)
 
 def generate_local_ai_reply(username, comment_text):
-    """
-    Queries your local Ollama instance running inside the 
-    GitHub Action runner to query the Qwen model architecture.
-    """
     print(f"🤖 Querying local Ollama server for @{username}...")
     ollama_url = "http://localhost:11434/api/generate"
     
@@ -625,8 +620,6 @@ def generate_local_ai_reply(username, comment_text):
             ai_text = response.json().get("response", "").strip()
             if ai_text.startswith('"') and ai_text.endswith('"'):
                 ai_text = ai_text[1:-1]
-                
-            # Strict safety truncation to completely lock in your 20-character rule
             if len(ai_text) > 20:
                 ai_text = ai_text[:17] + "..."
             return ai_text
@@ -636,36 +629,37 @@ def generate_local_ai_reply(username, comment_text):
     return "Thanks! 🙌🔥"
 
 def get_latest_media():
-    """
-    Tries the primary account media endpoint first. If it encounters a 404 or redirect,
-    it automatically falls back to the universal 'me/media' node mapping.
-    """
-    # FIXED: Correct Graph API domain, version, and slash formatting
-    url = f"https://graph.facebook.com/v20.0/{INSTAGRAM_ACCOUNT_ID}/media?access_token={ACCESS_TOKEN}"
+    # Added 'comments_count' and 'permalink' to fields for debugging
+    url = f"https://graph.facebook.com/v20.0/{INSTAGRAM_ACCOUNT_ID}/media?fields=id,comments_count,permalink&access_token={ACCESS_TOKEN}"
     try:
         response = requests.get(url)
-        if response.status_code == 200:
-            data = response.json().get('data', [])
-            if data:
-                return data[0]
+        response.raise_for_status()
+        data = response.json().get('data', [])
+        if data:
+            latest = data[0]
+            print(f"📸 Target Post Found ID: {latest['id']}")
+            print(f"🔗 Post Permalink: {latest.get('permalink', 'N/A')}")
+            print(f"📊 Meta Reports Comment Count: {latest.get('comments_count', 'Unknown')}")
+            return latest
     except Exception as e:
         print(f"⚠️ Primary endpoint failed: {e}")
 
-    print("⚠️ Primary endpoint failed or returned no data. Activating automatic universal fallback route...")
-    
-    # FIXED: Corrected typo 'facebook.comme' to 'graph.facebook.com/v20.0/me'
-    fallback_url = f"https://graph.facebook.com/v20.0/me/media?access_token={ACCESS_TOKEN}"
+    print("⚠️ Primary endpoint failed. Activating automatic universal fallback route...")
+    fallback_url = f"https://graph.facebook.com/v20.0/me/media?fields=id,comments_count,permalink&access_token={ACCESS_TOKEN}"
     try:
         response = requests.get(fallback_url)
         response.raise_for_status()
         data = response.json().get('data', [])
-        return data[0] if data else None
+        if data:
+            latest = data[0]
+            print(f"📸 Target Post Found ID (Fallback): {latest['id']}")
+            print(f"📊 Meta Reports Comment Count: {latest.get('comments_count', 'Unknown')}")
+            return latest
     except Exception as e:
         print(f"❌ Critical Error: All media discovery paths failed: {e}")
-        return None
+    return None
 
 def send_dm(user_id, message_text):
-    # FIXED: Correct Instagram Messaging API endpoint
     url = f"https://graph.facebook.com/v20.0/me/messages?access_token={ACCESS_TOKEN}"
     payload = {
         "recipient": {"id": str(user_id)},
@@ -679,7 +673,6 @@ def send_dm(user_id, message_text):
         print(f"⚠️ Failed to send DM to {user_id}: {e}")
 
 def reply_to_public_comment(comment_id, message_text):
-    # FIXED: Correct Graph API endpoint for replying to comments
     url = f"https://graph.facebook.com/v20.0/{comment_id}/replies"
     payload = {
         'message': message_text,
@@ -693,11 +686,6 @@ def reply_to_public_comment(comment_id, message_text):
         print(f"⚠️ Failed to reply to comment {comment_id}: {e}")
 
 def has_bot_replied_to_this_comment(comment_id):
-    """
-    Checks the live sub-replies of this specific comment ID.
-    Returns True only if our own account ID has already responded to it.
-    """
-    # FIXED: Correct Graph API endpoint for fetching comment replies
     url = f"https://graph.facebook.com/v20.0/{comment_id}/replies?fields=from&access_token={ACCESS_TOKEN}"
     try:
         res = requests.get(url)
@@ -712,42 +700,54 @@ def has_bot_replied_to_this_comment(comment_id):
     return False
 
 def process_all_comments(media_id):
-    # FIXED: Correct Graph API endpoint for fetching media comments
-    url = f"https://graph.facebook.com/v20.0/{media_id}/comments?fields=id,text,from&access_token={ACCESS_TOKEN}"
+    url = f"https://graph.facebook.com/v20.0/{media_id}/comments?fields=id,text,from,hidden&access_token={ACCESS_TOKEN}"
     try:
         response = requests.get(url)
+        
+        # Debug: Print raw response if it's not a clean 200 OK
+        if response.status_code != 200:
+            print(f"❌ API Error Fetching Comments: HTTP {response.status_code}")
+            print(f"🔍 Raw Response: {response.text}")
+            return
+            
         response.raise_for_status()
-        comments = response.json().get('data', [])
+        response_json = response.json()
+        comments = response_json.get('data', [])
+        
         print(f"💬 Found {len(comments)} total comments to evaluate.")
+        
+        # Debug: If Meta says there are comments but we got 0, print the raw payload
+        if len(comments) == 0:
+            print(f"🔍 Raw API Response for Comments: {response_json}")
+            if "error" in response_json:
+                print(f"⚠️ Meta API Error Detected: {response_json['error'].get('message')}")
+                print("👉 ACTION REQUIRED: Check your Access Token permissions in Meta App Dashboard.")
+                print("   Required permissions: instagram_basic, instagram_manage_comments, pages_read_engagement")
+            return
         
         for comment in comments:
             comment_id = comment.get('id')
-            comment_text = comment.get('text', '') # Safe string capture
+            comment_text = comment.get('text', '')
             commenter = comment.get('from')
             
             if commenter:
                 instagram_user_id = commenter.get('id')
                 username = commenter.get('username', 'there')
                 
-                # Prevent the bot from talking to itself
                 if str(instagram_user_id) == str(INSTAGRAM_ACCOUNT_ID):
                     continue
                 
-                # Deduplication Filter: Safely checks if THIS specific comment was already answered
                 if has_bot_replied_to_this_comment(comment_id):
                     print(f"⏭️ Skipping comment ID {comment_id} from @{username} (Already replied).")
                     continue
                 
                 print(f"🚀 Processing comment from @{username}...")
                 
-                # Call local Qwen runner inside actions container
                 custom_ai_reply = generate_local_ai_reply(username, comment_text)
                 print(f"✨ AI Reply Generated: {custom_ai_reply}")
                 
-                # 1. Post public comment reply powered by local Qwen
                 reply_to_public_comment(comment_id, custom_ai_reply)
                 
-                # 2. Fire the private engagement DM
                 dm_text = f"Hey {username}! Thanks for dropping a comment on my recent post. Let's connect!"
                 send_dm(instagram_user_id, dm_text)
                 
@@ -758,7 +758,6 @@ if __name__ == "__main__":
     print("🚀 Starting Instagram Blanket Engagement Bot...")
     latest_post = get_latest_media()
     if latest_post:
-        print(f"📸 Target Post Found ID: {latest_post['id']}")
         process_all_comments(latest_post['id'])
     else:
         print("🤷 No recent posts found or API error occurred.")
