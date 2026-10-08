@@ -582,8 +582,6 @@
 
 
 
-
-
 import os
 import sys
 import requests
@@ -640,15 +638,33 @@ def generate_local_ai_reply(username, comment_text):
     return "Thanks! 🙌🔥"
 
 def get_latest_media():
-    # UNTOUCHED WORKING ORIGINAL ENDPOINT
+    """
+    Tries the primary account media endpoint first. If it encounters a 404 or redirect,
+    it automatically falls back to the universal 'me/media' node mapping.
+    """
+    # Try the original working endpoint first
     url = f"https://facebook.com/{INSTAGRAM_ACCOUNT_ID}/media?access_token={ACCESS_TOKEN}"
     try:
         response = requests.get(url)
+        # Only accept actual valid API data responses
+        if response.status_code == 200 and "www.facebook.com" not in response.url:
+            data = response.json().get('data', [])
+            if data:
+                return data[0]
+    except Exception:
+        pass
+
+    print("⚠️ Primary endpoint failed or redirected. Activating automatic universal fallback route...")
+    
+    # Universal Fallback Route: Bypasses explicit account node blocks
+    fallback_url = f"https://facebook.comme/media?access_token={ACCESS_TOKEN}"
+    try:
+        response = requests.get(fallback_url)
         response.raise_for_status()
         data = response.json().get('data', [])
-        return data[0] if data else None  # Safely returns the single most recent post
+        return data[0] if data else None
     except Exception as e:
-        print(f"❌ Failed to fetch media: {e}")
+        print(f"❌ Critical Error: All media discovery paths failed: {e}")
         return None
 
 def send_dm(user_id, message_text):
@@ -711,7 +727,7 @@ def process_all_comments(media_id):
                 
                 # Deduplication Filter: Safely checks if THIS specific comment was already answered
                 if has_bot_replied_to_this_comment(comment_id):
-                    print(f"⏭️ Skipping comment ID {comment_id} from @{username} (Already replied to this specific thread node).")
+                    print(f"⏭️ Skipping comment ID {comment_id} from @{username} (Already replied).")
                     continue
                 
                 print(f"🚀 Processing comment from @{username}...")
