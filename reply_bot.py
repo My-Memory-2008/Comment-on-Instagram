@@ -583,6 +583,7 @@
 
 
 
+
 import os
 import sys
 import requests
@@ -605,11 +606,11 @@ def generate_local_ai_reply(username, comment_text):
     ollama_url = "http://localhost:11434/api/generate"
     
     prompt = (
-        f"A viewer named @{username} left this comment on your post: '{comment_text}'. "
+        f"A viewer named @{username} commented: '{comment_text}'. "
         f"Write an ultra-short reply under 20 characters total. It must combine exactly "
-        f"one word of expression or gratitude (like 'Thanks!', 'Great!', 'Wow!', 'Love it!') "
+        f"one word of appreciation, respect, or gratitude (like 'Thanks!', 'Great!', 'Wow!', 'Love it!') "
         f"with multiple raw emojis (like 🙌, 🔥, ❤️, 🫡, 🌟, 💯). "
-        f"Prioritize emojis heavily but include the one word. Do not include quotes."
+        f"Prioritize emojis heavily but include the one text word. Do not include quotes."
     )
     
     payload = {
@@ -629,7 +630,7 @@ def generate_local_ai_reply(username, comment_text):
             if ai_text.startswith('"') and ai_text.endswith('"'):
                 ai_text = ai_text[1:-1]
                 
-            # Strict safety truncate to completely enforce your 20-character rule
+            # Strict safety truncation to completely lock in your 20-character rule
             if len(ai_text) > 20:
                 ai_text = ai_text[:17] + "..."
             return ai_text
@@ -708,9 +709,9 @@ def process_all_comments(media_id):
                 if instagram_user_id == INSTAGRAM_ACCOUNT_ID:
                     continue
                 
-                # Deduplication Filter: Checks if THIS specific comment was already answered
+                # Deduplication Filter: Safely checks if THIS specific comment was already answered
                 if has_bot_replied_to_this_comment(comment_id):
-                    print(f"⏭️ Skipping comment ID {comment_id} from @{username} (Already replied to this specific text).")
+                    print(f"⏭️ Skipping comment ID {comment_id} from @{username} (Already replied to this specific thread node).")
                     continue
                 
                 print(f"🚀 Processing comment from @{username}...")
@@ -737,5 +738,4 @@ if __name__ == "__main__":
         process_all_comments(latest_post['id'])
     else:
         print("🤷 No recent posts found or API error occurred.")
-
 
